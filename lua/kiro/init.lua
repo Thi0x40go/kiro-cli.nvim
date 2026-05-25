@@ -1,60 +1,48 @@
---- Kiro CLI Neovim Integration Entry Point
---- Fully modular, asynchronous, production-grade integration
+--- Kiro CLI Neovim Integration
+--- Terminal Toggle + Hook Approval Security Gate
 
 local M = {}
 
-M.client = nil
 M.pending_approval_callback = nil
 
---- Start the Kiro ACP client process singleton
---- @return KiroClient|nil
-function M.start_client()
-  if M.client and M.client.is_running then
-    return M.client
-  end
+--- Toggle the Kiro CLI chat inside a snacks.nvim terminal
+--- @param opts? table options like { position = "float" | "bottom" }
+function M.toggle(opts)
+  opts = opts or {}
+  local position = opts.position or "float"
 
-  local client_mod = require("kiro.acp.client")
-  local chat = require("kiro.ui.chat")
+  local cmd = "kiro-cli chat"
+  -- if require("kiro.config").values.trust_all_tools then
+  --   cmd = cmd .. " --trust-all-tools"
+  -- end
 
-  M.client = client_mod.Client.new(function(event_type, data)
-    chat.handle_client_event(event_type, data)
-  end)
-
-  local started = M.client:start()
-  if started then
-    return M.client
+  if pcall(require, "snacks") then
+    require("snacks").terminal.toggle(cmd, {
+      win = {
+        position = position,
+        title = " Kiro CLI ",
+      },
+    })
   else
-    M.client = nil
-    return nil
+    vim.notify("Plugin 'snacks.nvim' not found. It is required to toggle the floating terminal.", vim.log.levels.ERROR)
   end
-end
-
---- Toggles the floating / split chat window
-function M.toggle()
-  if not M.client or not M.client.is_running then
-    M.start_client()
-  end
-  require("kiro.ui.chat").toggle()
 end
 
 --- Configure and initialize the plugin
 --- @param opts? KiroConfig
 function M.setup(opts)
-  -- 1. Setup default configurations
+  -- 1. Setup config
   require("kiro.config").setup(opts)
 
-  -- 2. Bind user commands (:KiroChat, :KiroFix, etc.)
+  -- 2. Bind user commands (:KiroToggle, :KiroSplit, :KiroApprove, :KiroReject)
   require("kiro.commands").setup()
 
-  -- 3. Start TCP/Unix socket server for Kiro preToolUse/postToolUse hooks
+  -- 3. Start Unix/TCP socket server for external Kiro hooks
   require("kiro.hooks.bridge").start()
 
-  -- 4. Clean up processes and socket files on Neovim exit
+  -- 4. Teardown bridge server gracefully on Neovim exit
   vim.api.nvim_create_autocmd("VimLeavePre", {
     callback = function()
-      if M.client then
-        M.client:close()
-      end
       require("kiro.hooks.bridge").stop()
     end,
   })

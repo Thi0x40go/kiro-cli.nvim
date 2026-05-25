@@ -33,17 +33,17 @@ process.stdin.on('end', () => {
   // Resolve socket path or TCP port
   let target = process.env.KIRO_SOCKET_PATH;
   if (!target) {
-    // Detect standard OS temporary path for Neovim sockets
-    const uid = process.getuid ? process.getuid() : '1000';
-    const runPath = `/run/user/${uid}/nvim/kiro_bridge.sock`;
-    
-    if (fs.existsSync(runPath)) {
-      target = runPath;
-    } else if (fs.existsSync('/tmp/kiro_bridge.sock')) {
+    if (fs.existsSync('/tmp/kiro_bridge.sock')) {
       target = '/tmp/kiro_bridge.sock';
     } else {
-      // Default to TCP port on localhost (Windows compatibility)
-      target = '127.0.0.1:49999';
+      const uid = process.getuid ? process.getuid() : '1000';
+      const runPath = `/run/user/${uid}/nvim/kiro_bridge.sock`;
+      if (fs.existsSync(runPath)) {
+        target = runPath;
+      } else {
+        // Default to TCP port on localhost (Windows compatibility)
+        target = '127.0.0.1:49999';
+      }
     }
   }
 
