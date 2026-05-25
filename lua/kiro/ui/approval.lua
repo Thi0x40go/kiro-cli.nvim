@@ -322,6 +322,7 @@ function M.show(opts)
           diff_viewer.render_unified(diff_buf, file_path, new_content)
           diff_viewer.apply_winhighlight(diff_win)
           table.insert(created_buffers, diff_buf)
+          vim.cmd("stopinsert")
           
           local function close_unified_diff()
             local w = diff_win

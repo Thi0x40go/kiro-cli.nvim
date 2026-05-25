@@ -6,13 +6,13 @@ local function setup_highlights()
   if is_dark then
     vim.api.nvim_set_hl(0, "KiroDiffAdd", { bg = "#143a1d", fg = "#4ade80", default = true })
     vim.api.nvim_set_hl(0, "KiroDiffDelete", { bg = "#441515", fg = "#f87171", default = true })
-    vim.api.nvim_set_hl(0, "KiroDiffChange", { bg = "#1c2b3d", fg = "#38bdf8", default = true })
-    vim.api.nvim_set_hl(0, "KiroDiffText", { bg = "#0f3a60", fg = "#60a5fa", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffChange", { bg = "#2b261a", fg = "#fbbf24", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffText", { bg = "#4d3d18", fg = "#ffffff", bold = true, default = true })
   else
-    vim.api.nvim_set_hl(0, "KiroDiffAdd", { bg = "#dcfce7", fg = "#15803d", default = true })
-    vim.api.nvim_set_hl(0, "KiroDiffDelete", { bg = "#fee2e2", fg = "#b91c1c", default = true })
-    vim.api.nvim_set_hl(0, "KiroDiffChange", { bg = "#e0f2fe", fg = "#0369a1", default = true })
-    vim.api.nvim_set_hl(0, "KiroDiffText", { bg = "#bae6fd", fg = "#0284c7", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffAdd", { bg = "#dcfce7", fg = "#166534", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffDelete", { bg = "#fee2e2", fg = "#991b1b", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffChange", { bg = "#fef3c7", fg = "#92400e", default = true })
+    vim.api.nvim_set_hl(0, "KiroDiffText", { bg = "#fde68a", fg = "#78350f", bold = true, default = true })
   end
 end
 
@@ -149,8 +149,9 @@ function M.render_side_by_side(parent_win, filepath, new_content)
   vim.api.nvim_set_option_value("modifiable", false, { buf = buf_orig })
   vim.api.nvim_set_option_value("modifiable", false, { buf = buf_new })
 
-  -- Focus the right window
+  -- Focus the right window & force exit insert mode
   vim.api.nvim_set_current_win(win_new)
+  vim.cmd("stopinsert")
 
   return win_orig, win_new, buf_orig, buf_new
 end
