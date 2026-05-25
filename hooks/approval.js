@@ -32,6 +32,10 @@ process.stdin.on('end', () => {
 
   // Resolve socket path or TCP port
   let target = process.env.KIRO_SOCKET_PATH;
+  // If target is set from env but does not exist, check fallback paths
+  if (target && !target.includes(':') && !fs.existsSync(target)) {
+    target = null;
+  }
   if (!target) {
     if (fs.existsSync('/tmp/kiro_bridge.sock')) {
       target = '/tmp/kiro_bridge.sock';
@@ -94,6 +98,12 @@ process.stdin.on('end', () => {
   });
 
   client.on('error', (err) => {
+    // Log error to /tmp/kiro_hook_error.log for user diagnostics
+    try {
+      const logMsg = `[${new Date().toISOString()}] Target: ${target}\nError: ${err.message}\nStack: ${err.stack}\n\n`;
+      fs.appendFileSync('/tmp/kiro_hook_error.log', logMsg);
+    } catch (e) {}
+
     // If Neovim is not running, allow execution and exit gracefully
     console.warn(`[Kiro Hook Warning] Could not connect to Neovim at ${target}:`, err.message);
     console.warn('Running outside Neovim context. Proceeding with execution.');

@@ -58,7 +58,39 @@ function M.show(opts)
   elseif tool_name == "write" or tool_name == "fs_write" or tool_name == "edit" then
     is_file_op = true
     file_path = tool_input.path or tool_input.filepath or ""
-    new_content = tool_input.content or tool_input.text or ""
+    local raw_content = tool_input.content or tool_input.text or ""
+
+    -- Read original content of the file
+    local original_content = ""
+    if file_path ~= "" then
+      local f = io.open(file_path, "r")
+      if f then
+        original_content = f:read("*a")
+        f:close()
+      end
+    end
+
+    -- Construct new_content based on the write command type
+    local command = tool_input.command or ""
+    if command == "strReplace" then
+      local old_str = tool_input.oldStr or ""
+      local new_str = tool_input.newStr or ""
+      if old_str ~= "" then
+        local start_idx, end_idx = original_content:find(old_str, 1, true)
+        if start_idx then
+          new_content = original_content:sub(1, start_idx - 1) .. new_str .. original_content:sub(end_idx + 1)
+        else
+          new_content = original_content
+        end
+      else
+        new_content = original_content
+      end
+    elseif command == "insert" or command == "append" then
+      new_content = original_content .. raw_content
+    else
+      new_content = raw_content
+    end
+
     file_or_cmd = vim.fn.fnamemodify(file_path, ":~:.")
   elseif tool_name == "delete" or tool_name == "fs_delete" or tool_name == "rm" then
     file_path = tool_input.path or tool_input.filepath or ""
@@ -125,13 +157,17 @@ function M.show(opts)
   local diff_win = nil
   local diff_buf = nil
   local side_by_side_wins = nil
+  local created_buffers = { buf }
 
   local choice_made = false
+  local switching_to_diff = false
 
   -- Helper function to close all UI windows associated with this approval
   local function cleanup()
     if choice_made then return end
-    choice_made = true
+    if not switching_to_diff then
+      choice_made = true
+    end
 
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
@@ -142,9 +178,19 @@ function M.show(opts)
     if side_by_side_wins then
       for _, w in ipairs(side_by_side_wins) do
         if vim.api.nvim_win_is_valid(w) then
-          vim.api.nvim_win_close(w, true)
+          pcall(vim.api.nvim_win_close, w, true)
         end
       end
+    end
+
+    -- Clean up all created buffers on final decision
+    if not switching_to_diff then
+      for _, b in ipairs(created_buffers) do
+        if vim.api.nvim_buf_is_valid(b) then
+          pcall(vim.api.nvim_buf_delete, b, { force = true })
+        end
+      end
+      created_buffers = {}
     end
   end
 
@@ -167,7 +213,7 @@ function M.show(opts)
   vim.api.nvim_create_autocmd("WinClosed", {
     buffer = buf,
     callback = function()
-      if not choice_made then
+      if not choice_made and not switching_to_diff then
         make_choice(false)
       end
     end,
@@ -188,6 +234,7 @@ function M.show(opts)
     bind(config.values.keymaps.view_diff, function()
       if config.values.diff_preview_mode == "side-by-side" then
         -- Open side-by-side diff
+        switching_to_diff = true
         cleanup()
         local win_orig, win_new, buf_orig, buf_new = diff_viewer.render_side_by_side(
           vim.api.nvim_get_current_win(),
@@ -195,33 +242,105 @@ function M.show(opts)
           new_content
         )
         side_by_side_wins = { win_orig, win_new }
+        table.insert(created_buffers, buf_orig)
+        table.insert(created_buffers, buf_new)
 
-        -- Setup local binds in the side-by-side windows too
+        local side_by_side_closed = false
+        local function close_diff_and_reopen()
+          if side_by_side_closed then return end
+          side_by_side_closed = true
+
+          -- Close side-by-side windows
+          if side_by_side_wins then
+            for _, w in ipairs(side_by_side_wins) do
+              if vim.api.nvim_win_is_valid(w) then
+                pcall(vim.api.nvim_win_close, w, true)
+              end
+            end
+            side_by_side_wins = nil
+          end
+
+          -- Delete side-by-side buffers immediately to prevent E95 name collision
+          if buf_orig and vim.api.nvim_buf_is_valid(buf_orig) then
+            pcall(vim.api.nvim_buf_delete, buf_orig, { force = true })
+          end
+          if buf_new and vim.api.nvim_buf_is_valid(buf_new) then
+            pcall(vim.api.nvim_buf_delete, buf_new, { force = true })
+          end
+
+          -- Remove from created_buffers tracking list
+          local new_created = {}
+          for _, b in ipairs(created_buffers) do
+            if b ~= buf_orig and b ~= buf_new then
+              table.insert(new_created, b)
+            end
+          end
+          created_buffers = new_created
+
+          -- Re-open approval popup
+          M.show(opts)
+        end
+
+        -- Setup local binds in the side-by-side windows
         local function bind_diff(b)
-          vim.keymap.set("n", config.values.keymaps.approve, function() make_choice(true) end, { buffer = b, silent = true })
-          vim.keymap.set("n", config.values.keymaps.deny, function() make_choice(false) end, { buffer = b, silent = true })
-          vim.keymap.set("n", config.values.keymaps.close, function() make_choice(false) end, { buffer = b, silent = true })
+          vim.keymap.set("n", config.values.keymaps.close, close_diff_and_reopen, { buffer = b, silent = true })
+          vim.keymap.set("n", config.values.keymaps.view_diff, close_diff_and_reopen, { buffer = b, silent = true })
         end
         bind_diff(buf_orig)
         bind_diff(buf_new)
+
+        -- Handle split window closed or buffer exited unexpectedly
+        vim.api.nvim_create_autocmd("BufWinLeave", {
+          buffer = buf_orig,
+          callback = close_diff_and_reopen,
+          once = true,
+        })
+        vim.api.nvim_create_autocmd("BufWinLeave", {
+          buffer = buf_new,
+          callback = close_diff_and_reopen,
+          once = true,
+        })
       else
         -- Toggle floating unified diff
         if diff_win and vim.api.nvim_win_is_valid(diff_win) then
-          vim.api.nvim_win_close(diff_win, true)
+          local w = diff_win
+          local b = diff_buf
           diff_win = nil
+          diff_buf = nil
+          if w and vim.api.nvim_win_is_valid(w) then
+            vim.api.nvim_win_close(w, true)
+          end
+          vim.schedule(function()
+            if b and vim.api.nvim_buf_is_valid(b) then
+              pcall(vim.api.nvim_buf_delete, b, { force = true })
+            end
+          end)
         else
           local diff_w = 80
           local diff_h = 15
           diff_buf, diff_win = open_float(diff_w, diff_h, "Proposed File Changes Diff")
           diff_viewer.render_unified(diff_buf, file_path, new_content)
+          diff_viewer.apply_winhighlight(diff_win)
+          table.insert(created_buffers, diff_buf)
           
-          -- Bind keys inside diff window to approve/deny too
-          vim.keymap.set("n", config.values.keymaps.approve, function() make_choice(true) end, { buffer = diff_buf, silent = true })
-          vim.keymap.set("n", config.values.keymaps.deny, function() make_choice(false) end, { buffer = diff_buf, silent = true })
-          vim.keymap.set("n", config.values.keymaps.close, function()
-            vim.api.nvim_win_close(diff_win, true)
+          local function close_unified_diff()
+            local w = diff_win
+            local b = diff_buf
             diff_win = nil
-          end, { buffer = diff_buf, silent = true })
+            diff_buf = nil
+            if w and vim.api.nvim_win_is_valid(w) then
+              vim.api.nvim_win_close(w, true)
+            end
+            vim.schedule(function()
+              if b and vim.api.nvim_buf_is_valid(b) then
+                pcall(vim.api.nvim_buf_delete, b, { force = true })
+              end
+            end)
+          end
+
+          -- Bind keys inside diff window to close/toggle
+          vim.keymap.set("n", config.values.keymaps.close, close_unified_diff, { buffer = diff_buf, silent = true })
+          vim.keymap.set("n", config.values.keymaps.view_diff, close_unified_diff, { buffer = diff_buf, silent = true })
         end
       end
     end)

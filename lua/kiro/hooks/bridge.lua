@@ -5,6 +5,14 @@ local M = {}
 local server_handle = nil
 local active_connections = {}
 
+local function log_server(msg)
+  local f = io.open("/tmp/kiro_bridge_server.log", "a")
+  if f then
+    f:write(string.format("[%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), msg))
+    f:close()
+  end
+end
+
 --- Check if the socket path is a TCP address (contains host:port)
 --- @param path string
 --- @return boolean
@@ -125,6 +133,7 @@ function M.start()
 
   local listen_ok, listen_err = server:listen(128, function(err)
     if err then
+      log_server("Socket listen callback error: " .. tostring(err))
       vim.notify("[Kiro Bridge] Socket listen error: " .. tostring(err), vim.log.levels.ERROR)
       return
     end
@@ -137,30 +146,35 @@ function M.start()
     end
 
     server:accept(connection)
+    log_server("Accepted new connection client!")
     table.insert(active_connections, connection)
 
     local buffer = ""
     connection:read_start(function(read_err, chunk)
       if read_err then
+        log_server("Connection read error: " .. tostring(read_err))
         connection:close()
         return
       end
 
       if chunk then
+        log_server("Received chunk of length " .. #chunk .. ": " .. chunk)
         buffer = buffer .. chunk
-        -- Wait until complete JSON payload is received (we can delimiter by newline)
         if buffer:sub(-1) == "\n" or buffer:find("\n") then
+          log_server("Detected newline delimiter, attempting JSON decode...")
           local ok, payload = pcall(vim.json.decode, buffer)
           if ok and payload then
-            -- Reset buffer for this connection
+            log_server("JSON decode successful! Processing hook request...")
             buffer = ""
             vim.schedule(function()
               M.process_hook_request(connection, payload)
             end)
+          else
+            log_server("JSON decode failed: " .. tostring(payload))
           end
         end
       else
-        -- Connection closed by client
+        log_server("Connection closed by client EOF")
         connection:close()
       end
     end)

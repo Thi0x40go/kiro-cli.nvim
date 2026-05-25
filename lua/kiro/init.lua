@@ -12,9 +12,9 @@ function M.toggle(opts)
   local position = opts.position or "float"
 
   local cmd = "kiro-cli chat"
-  -- if require("kiro.config").values.trust_all_tools then
-  --   cmd = cmd .. " --trust-all-tools"
-  -- end
+  if require("kiro.config").values.trust_all_tools then
+    cmd = cmd .. " --trust-all-tools"
+  end
 
   if pcall(require, "snacks") then
     require("snacks").terminal.toggle(cmd, {

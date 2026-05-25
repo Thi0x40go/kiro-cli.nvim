@@ -16,7 +16,7 @@ local M = {}
 
 --- @type KiroConfig
 local DEFAULT_CONFIG = {
-  trust_all_tools = false,
+  trust_all_tools = true,
   auto_approve_safe_tools = true,
   allowed_tools = {
     "read",
@@ -27,7 +27,7 @@ local DEFAULT_CONFIG = {
     "git_status",
   },
   hook_socket_path = "/tmp/kiro_bridge.sock",
-  diff_preview_mode = "unified",
+  diff_preview_mode = "side-by-side",
   keymaps = {
     close = "q",
     approve = "a",
