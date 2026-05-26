@@ -57,6 +57,34 @@ vim.keymap.set('n', '<leader>tk', '<cmd>KiroToggle<cr>', { desc = 'Toggle Kiro C
 2. Press `<leader>tk` to open Kiro CLI popup
 3. Use your tmux prefix + `d` to close the popup (session persists)
 
+## Tool Approvals (Security Gate)
+
+`kiro-cli.nvim` provides a hook script to intercept Kiro CLI tool usage requests and prompt you for approval inside Neovim via a beautiful popup modal.
+
+### 1. Configure the Hook in Kiro CLI
+
+To register the hook, edit your Kiro CLI agent configuration file (e.g., `~/.kiro/agents/kiro_default.json` or create it if it doesn't exist) and add the `preToolUse` hook:
+
+```json
+{
+  "hooks": {
+    "preToolUse": "node /absolute/path/to/kiro-cli.nvim/hooks/approval.js"
+  }
+}
+```
+
+*(Replace `/absolute/path/to/kiro-cli.nvim` with the actual path to this plugin on your system)*
+
+### 2. Neovim Configuration
+
+Make sure `trust_all_tools` is set to `false` in your Neovim setup so that the hook is triggered instead of bypassing the approval modal:
+
+```lua
+require('kiro').setup({
+  trust_all_tools = false,
+})
+```
+
 ## License
 
 MIT
