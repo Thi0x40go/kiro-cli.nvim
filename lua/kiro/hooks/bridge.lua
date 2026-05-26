@@ -150,10 +150,11 @@ function M.start()
     table.insert(active_connections, connection)
 
     local buffer = ""
+    local request_pending = false
     connection:read_start(function(read_err, chunk)
       if read_err then
         log_server("Connection read error: " .. tostring(read_err))
-        connection:close()
+        if not connection:is_closing() then connection:close() end
         return
       end
 
@@ -165,6 +166,7 @@ function M.start()
           local ok, payload = pcall(vim.json.decode, buffer)
           if ok and payload then
             log_server("JSON decode successful! Processing hook request...")
+            request_pending = true
             buffer = ""
             vim.schedule(function()
               M.process_hook_request(connection, payload)
@@ -174,8 +176,11 @@ function M.start()
           end
         end
       else
-        log_server("Connection closed by client EOF")
-        connection:close()
+        log_server("Connection EOF received (client half-closed)")
+        -- Only close if no request is pending; otherwise let send_decision close it
+        if not request_pending then
+          if not connection:is_closing() then connection:close() end
+        end
       end
     end)
   end)
