@@ -8,6 +8,7 @@
 
 const net = require('net');
 const fs = require('fs');
+const readline = require('readline');
 
 // Read payload from Kiro CLI via STDIN
 let stdinData = '';
@@ -27,7 +28,7 @@ process.stdin.on('end', () => {
     payload = JSON.parse(stdinData);
   } catch (err) {
     console.error('[Kiro Hook] Failed to parse STDIN JSON:', err.message);
-    process.exit(0); // Graceful fallback
+    process.exit(2); // Fail closed on parse error
   }
 
   // Resolve socket path or TCP port
@@ -85,15 +86,32 @@ process.stdin.on('end', () => {
   client.on('end', () => {
     try {
       const response = JSON.parse(responseData.trim());
-      if (response.approved) {
-        process.exit(0); // 0 = Approve execution
+      
+      if (payload.hook_event_name === 'stop') {
+        if (response.block_decision) {
+          process.stdout.write(JSON.stringify(response.block_decision) + '\n');
+        }
+        process.exit(0);
+      }
+      
+      if (payload.hook_event_name === 'preToolUse' || !payload.hook_event_name) {
+        if (response.approved) {
+          process.exit(0); // 0 = Approve execution
+        } else {
+          console.error('\n[Security Gate] Tool execution rejected by user in Neovim.');
+          process.exit(2); // 2 = Explicitly deny tool execution in Kiro
+        }
       } else {
-        console.error('\n[Security Gate] Tool execution rejected by user in Neovim.');
-        process.exit(2); // 2 = Explicitly deny tool execution in Kiro
+        // For agentSpawn, postToolUse, userPromptSubmit, etc.
+        process.exit(0);
       }
     } catch (err) {
       console.error('[Kiro Hook] Failed to parse Neovim response:', err.message);
-      process.exit(0); // Graceful fallback
+      // For preToolUse fail closed, for others fail open
+      if (payload.hook_event_name === 'preToolUse') {
+        process.exit(2);
+      }
+      process.exit(0);
     }
   });
 
@@ -104,9 +122,49 @@ process.stdin.on('end', () => {
       fs.appendFileSync('/tmp/kiro_hook_error.log', logMsg);
     } catch (e) {}
 
-    // If Neovim is not running, allow execution and exit gracefully
-    console.warn(`[Kiro Hook Warning] Could not connect to Neovim at ${target}:`, err.message);
-    console.warn('Running outside Neovim context. Proceeding with execution.');
-    process.exit(0);
+    // If Neovim is not running, fallback behavior depends on the hook type
+    if (payload.hook_event_name && payload.hook_event_name !== 'preToolUse') {
+      // Non-blocking hooks can safely bypass if Neovim is down
+      process.exit(0);
+    }
+
+    const toolName = payload.tool_name || payload.tool || "unknown";
+    const toolInput = payload.tool_input || payload.arguments || {};
+
+    let ttyInput, ttyOutput;
+    try {
+      const isWindows = process.platform === 'win32';
+      const ttyDevice = isWindows ? 'CON' : '/dev/tty';
+      ttyInput = fs.createReadStream(ttyDevice);
+      ttyOutput = fs.createWriteStream(ttyDevice);
+    } catch (e) {
+      console.error(`\n[Security Gate Error] Could not connect to Neovim at ${target}:`, err.message);
+      console.error('Non-interactive environment detected. Cannot prompt user. Blocked (fail-closed).');
+      process.exit(2);
+    }
+
+    const rl = readline.createInterface({
+      input: ttyInput,
+      output: ttyOutput
+    });
+
+    ttyOutput.write(`\n==================================================`);
+    ttyOutput.write(`\n[SECURITY PENDING APPROVAL - OUTSIDE NEOVIM]`);
+    ttyOutput.write(`\nTool:  ${toolName}`);
+    ttyOutput.write(`\nInput: ${JSON.stringify(toolInput, null, 2)}`);
+    ttyOutput.write(`\n==================================================\n`);
+
+    rl.question('Approve this tool execution? (y/N): ', (answer) => {
+      rl.close();
+      ttyInput.destroy();
+      ttyOutput.destroy();
+      const approved = answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes';
+      if (approved) {
+        process.exit(0); // 0 = Approve execution
+      } else {
+        console.error('\n[Security Gate] Tool execution rejected by user.');
+        process.exit(2); // 2 = Explicitly deny tool execution
+      }
+    });
   });
 });

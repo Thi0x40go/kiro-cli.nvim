@@ -33,9 +33,47 @@ local function open_float(width, height, title)
   return buf, win
 end
 
+--- Play an alert sound when the approval modal appears, if enabled
+local function play_sound()
+  if not config.values.enable_sound then
+    return
+  end
+
+  local function try_cmd(cmd)
+    if vim.fn.executable(cmd[1]) == 1 then
+      vim.fn.jobstart(cmd)
+      return true
+    end
+    return false
+  end
+
+  if vim.fn.has("mac") == 1 or vim.fn.has("macunix") == 1 then
+    try_cmd({ "afplay", "/System/Library/Sounds/Ping.aiff" })
+  elseif vim.fn.has("win32") == 1 then
+    if not try_cmd({ "powershell.exe", "-c", "[System.Media.SystemSounds]::Beep.Play()" }) then
+      io.write("\a")
+    end
+  else
+    -- Linux / Unix fallback
+    if not try_cmd({ "canberra-gtk-play", "-i", "bell" }) then
+      if not try_cmd({ "pw-play", "/usr/share/sounds/freedesktop/stereo/bell.oga" }) then
+        if not try_cmd({ "paplay", "/usr/share/sounds/freedesktop/stereo/bell.oga" }) then
+          if not try_cmd({ "aplay", "/usr/share/sounds/alsa/Front_Center.wav" }) then
+            io.write("\a")
+          end
+        end
+      end
+    end
+  end
+end
+
 --- Show the tool approval window
---- @param opts { tool_name: string, tool_input: table, risk_level: "Low"|"Medium"|"High", reason: string, cwd: string, on_choice: fun(approved: boolean) }
+--- @param opts { tool_name: string, tool_input: table, risk_level: "Low"|"Medium"|"High", reason: string, cwd: string, on_choice: fun(approved: boolean), is_reopen?: boolean }
 function M.show(opts)
+  if not opts.is_reopen then
+    play_sound()
+  end
+
   local tool_name = opts.tool_name
   local tool_input = opts.tool_input
   local risk_level = opts.risk_level
@@ -278,7 +316,8 @@ function M.show(opts)
           created_buffers = new_created
 
           -- Re-open approval popup
-          M.show(opts)
+          local new_opts = vim.tbl_extend("force", opts, { is_reopen = true })
+          M.show(new_opts)
         end
 
         -- Setup local binds in the side-by-side windows

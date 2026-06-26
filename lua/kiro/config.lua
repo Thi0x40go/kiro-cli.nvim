@@ -11,12 +11,13 @@
 --- @field hook_socket_path string path to Unix socket (or TCP port) for bridge communication
 --- @field diff_preview_mode "unified"|"side-by-side" mode to show code diffs
 --- @field keymaps KiroKeymaps customizable keyboard shortcuts
+--- @field enable_sound boolean play a sound when the approval modal appears (default: true)
 
 local M = {}
 
 --- @type KiroConfig
 local DEFAULT_CONFIG = {
-  trust_all_tools = true,
+  trust_all_tools = false,
   auto_approve_safe_tools = true,
   allowed_tools = {
     "read",
@@ -28,6 +29,7 @@ local DEFAULT_CONFIG = {
   },
   hook_socket_path = "/tmp/kiro_bridge.sock",
   diff_preview_mode = "side-by-side",
+  enable_sound = true,
   keymaps = {
     close = "q",
     approve = "a",

@@ -197,19 +197,40 @@ end
 --- @param connection userdata vim.loop stream
 --- @param payload table
 function M.process_hook_request(connection, payload)
-  local tool_name = payload.tool_name or payload.tool or "unknown"
-  local tool_input = payload.tool_input or payload.arguments or {}
+  local hook_event_name = payload.hook_event_name
 
-  local auto_approve, risk_level, reason = M.evaluate_tool(tool_name, tool_input)
-
-  local function send_decision(approved)
-    local response = vim.json.encode({ approved = approved }) .. "\n"
+  local function send_decision(approved, extra_data)
+    local data = { approved = approved }
+    if extra_data then
+      for k, v in pairs(extra_data) do data[k] = v end
+    end
+    local response = vim.json.encode(data) .. "\n"
     if not connection:is_closing() then
       connection:write(response, function()
         connection:close()
       end)
     end
   end
+
+  if hook_event_name == "agentSpawn" then
+    vim.notify("[Kiro] Agent spawned in " .. (payload.cwd or "unknown dir"), vim.log.levels.INFO)
+    send_decision(true)
+    return
+  elseif hook_event_name == "postToolUse" or hook_event_name == "userPromptSubmit" then
+    send_decision(true)
+    return
+  elseif hook_event_name == "stop" then
+    -- vim.notify("[Kiro] Agent stopped.", vim.log.levels.INFO)
+    -- Here we could implement test running or logic to block stop
+    send_decision(true)
+    return
+  end
+
+  -- Default to preToolUse logic
+  local tool_name = payload.tool_name or payload.tool or "unknown"
+  local tool_input = payload.tool_input or payload.arguments or {}
+
+  local auto_approve, risk_level, reason = M.evaluate_tool(tool_name, tool_input)
 
   if auto_approve then
     send_decision(true)

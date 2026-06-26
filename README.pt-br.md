@@ -31,7 +31,7 @@ Plugin do Neovim para integração do Kiro CLI via popups do tmux.
 ```lua
 require('kiro').setup({
   trust_all_tools = false,  -- Se true, passa a flag --trust-all-tools
-  startup_timeout = 3000,   -- Tempo de espera para inicialização em ms
+  enable_sound = true,      -- Emitir um som quando o modal de aprovação aparecer
 })
 ```
 
